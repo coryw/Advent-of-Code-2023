@@ -1,9 +1,10 @@
-$DEBUG = 1
+$DEBUG = 0
 $file = Get-Content -Path "input.txt"
-$allSymbols = "!@#$%^&*()--+="
-$numbersToAdd = @()
-$numberList = @()
-$symbolList = @()
+$allSymbols = "!@#$%^&*()--+=/"
+
+$script:numbersToAdd = @()
+$script:numberList = @()
+$script:symbolList = @()
 
 Function Output-Debug($text) {
     if ($DEBUG) {
@@ -11,73 +12,73 @@ Function Output-Debug($text) {
     }
 }
 
-Function Get-NumberMatches($symbol) {
-    $lineNumber = $symbol.LineNumber
-    $index = $symbol.Index
-    Output-Debug "* Get-NumberMatches $($symbol.Value)"
-    if ($file[$lineNumber][[Math]::Abs($index - 1)] -match "\d")
+Function Get-Numbers {
+    for ($i = 0; $i -lt $file.Length; $i++)
     {
-        $result = $numberList 
-            | Where-Object { $_.LineNumber -eq $lineNumber -and $_.Index -eq ($index - $_.Length) }
-        $numbersToAdd += @($lineNumber, $result.Index)
-        Output-Debug "Found left $($result.Value)$($symbol.Value)"
-        Output-Debug "$numbersToAdd"
+        $numbers = ($file[$i] | Select-String -Pattern "\d+" -AllMatches).Matches
+        foreach ($number in $numbers)
+        {
+            Output-Debug "Line $i : $($number.Value)"
+            $number | Add-Member -Name LineNumber -Value $i -MemberType NoteProperty
+            $number | Add-Member -Name FinalValue -Value $i -MemberType NoteProperty
+            $script:numberList += $number
+        }
     }
-    if ($file[$lineNumber][$index + 1] -match "\d")
-    {
-        $result = $numberList 
-            | Where-Object { $_.LineNumber -eq $lineNumber -and $_.Index -eq ($index + 1) }
-        $numbersToAdd += @($result)
-        Output-Debug "Found right $($symbol.Value)$($result.Value)"
-    }
-    if (($file[[Math]::Abs($lineNumber - 1)][$index] -match "\d") -Or
-        ($file[[Math]::Abs($lineNumber - 1)][[Math]::Abs($index - 1)] -match "\d") -Or
-        ($file[[Math]::Abs($lineNumber - 1)][$index + 1] -match "\d"))
-    {
-        $result = $numberList | Where-Object {
-                $_.LineNumber -eq ($lineNumber - 1) -and $index -ge ($_.Index - 1) -and $index -le ($_.Index + $_.Length + 1)
-            }
-        $numbersToAdd += @($result)
-        Output-Debug "Found top $($result.Value)/$($symbol.Value)"
-    }
-    if (($file[$lineNumber + 1][$index] -match "\d") -Or
-        ($file[$lineNumber + 1][[Math]::Abs($index - 1)] -match "\d") -Or
-        ($file[$lineNumber + 1][$index + 1] -match "\d"))
-    {
-        $result = $numberList | Where-Object {
-                $_.LineNumber -eq ($lineNumber + 1) -and $index -ge ($_.Index - 1) -and $index -le ($_.Index + $_.Length + 1)
-            }
-        $numbersToAdd += @($result)
-        Output-Debug "Found bottom $($symbol.Value)/$($result.Value)"
-    }
+    $script:numberList = $script:numberList | Sort-Object -Property LineNumber,Index
     Output-Debug ""
 }
 
-for ($i = 0; $i -lt $file.Length; $i++)
-{
-    $numbers = ($file[$i] | Select-String -Pattern "\d+" -AllMatches).Matches
-    $symbols = ($file[$i] | Select-String -Pattern "[$allSymbols]" -AllMatches).Matches
-    foreach ($number in $numbers)
+Function Get-Matches {
+    foreach ($number in $script:numberList | Sort-Object -Property LineNumber,Index)
     {
-        Output-Debug "Line $i : $($number.Value)"
-        $number | Add-Member -Name LineNumber -Value $i -MemberType NoteProperty
-        $numberList += $number
+        $value = $number.Value
+        $number.FinalValue = 0
+        $index = $number.Index
+        if ($file[$number.LineNumber][[Math]::Abs($index - 1)] -match "[$allSymbols]") 
+        {
+            $number.FinalValue = $value 
+        }
+        if ($file[$number.LineNumber][$index + $number.Length] -match "[$allSymbols]") 
+        {
+            $number.FinalValue = $value
+        }
+        for ($i = [Math]::Abs($number.Index - 1); $i -lt ($number.Index + $number.Length + 1); $i++)
+        {
+            if ($file[$number.LineNumber - 1][$i] -match "[$allSymbols]") 
+            {
+               $number.FinalValue = $value 
+            }
+            if ($number.LineNumber + 1 -le 139) {
+                if ($file[$number.LineNumber + 1][$i] -match "[$allSymbols]") 
+                {
+                    $number.FinalValue = $value 
+                }
+            }
+        }
+        #$symbols = ($file[$i] | Select-String -Pattern "[$allSymbols]" -AllMatches).Matches
+        if ($number.FinalValue -ne 0)
+        {
+            #echo "+ $($number.Value) is valid on line $($number.LineNumber)"
+            #echo $number
+        }
+        if ($number.FinalValue -eq 0)
+        {
+            Output-Debug "- $($number.Value) is NOT valid on line $($number.LineNumber)"
+            Output-Debug $number
+        }
     }
-    foreach ($symbol in $symbols)
-    {
-        Output-Debug "Line $i : $($symbol.Value)"
-        $symbol | Add-Member -Name LineNumber -Value $i -MemberType NoteProperty
-        $symbolList += $symbol
-    }
-    Output-Debug ""
 }
 
-foreach ($symbol in $symbolList)
-{
-    Get-NumberMatches $symbol
-}
+Get-Numbers
+Get-Matches
 
-Output-Debug "Number Count: $($numbersToAdd)"
+Output-Debug "Number Count: $($script:numbersToAdd)"
+Output-Debug "Final Answer: $($script:numbersToAdd | Measure-Object -Property Value -sum)"
+Output-Debug $script:numbersToAdd | Measure-Object -Property Value -sum
+
+$finalTotal = ($script:numberList | Measure-Object -Property FinalValue -sum).Sum
+
+echo "Grand total: $finalTotal"
 
 $symbolMatrix = (Select-String -Path "input.txt" -Pattern "[$allSymbols]" -AllMatches).Matches
 $output = ($file | Select-String -Pattern "[$allSymbols]" -AllMatches)
